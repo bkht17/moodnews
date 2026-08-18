@@ -1,8 +1,8 @@
 """FastAPI application entrypoint.
 
-Routers for news/rewrites are mounted in the API section; for now the app
-exposes health/meta endpoints so the container, the compose healthcheck and the
-frontend all have something real to talk to.
+Wires together configuration, the SQLite schema, startup ingestion and the
+API router. The news/mood endpoints live in `app.api.routes`; the health and
+root endpoints stay here because the compose healthcheck depends on them.
 """
 
 import asyncio
@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes import router as api_router
 from app.core.config import get_settings
 from app.core.database import get_db_path, healthcheck
 from app.core.schema import init_db
@@ -84,6 +85,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(api_router)
 
 
 @app.get("/health", tags=["meta"])

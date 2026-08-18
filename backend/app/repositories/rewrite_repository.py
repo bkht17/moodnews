@@ -102,6 +102,26 @@ def cached_moods(news_id: int) -> list[str]:
     return [row["mood"] for row in rows]
 
 
+def cached_moods_map(news_ids: list[int]) -> dict[int, list[str]]:
+    """Cached moods for many articles at once, keyed by article id.
+
+    The grid needs this for every card; one query beats one query per card.
+    """
+    if not news_ids:
+        return {}
+    placeholders = ",".join("?" * len(news_ids))
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT news_id, mood FROM rewrites "
+            f"WHERE news_id IN ({placeholders}) ORDER BY news_id, mood",
+            news_ids,
+        ).fetchall()
+    result: dict[int, list[str]] = {}
+    for row in rows:
+        result.setdefault(row["news_id"], []).append(row["mood"])
+    return result
+
+
 def delete_rewrite(news_id: int, mood: str) -> bool:
     with get_connection() as conn:
         cursor = conn.execute(

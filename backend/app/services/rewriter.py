@@ -37,6 +37,7 @@ correction rather than a reroll of the same dice. Caching (see
 """
 
 import logging
+import threading
 
 from app.core.config import get_settings
 from app.models import Article, FactSet, Rewrite, RewriteDraft
@@ -52,6 +53,20 @@ logger = logging.getLogger(__name__)
 # article cannot crowd the article itself out of the context window.
 MAX_FACTS_IN_PROMPT = 40
 MAX_QUOTE_CHARS = 300
+
+# One in-flight generation per (article, mood). Without this, a reader flicking
+# through the mood switcher - or two readers on the same article - would start
+# several identical rewrites, each an LLM call nobody needed: the cache only
+# helps once the first one has finished writing. Sync API handlers run in
+# FastAPI's worker threads, so a threading lock is the right primitive here.
+_generation_locks: dict[tuple[int, str], threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _generation_lock(news_id: int, mood_key: str) -> threading.Lock:
+    key = (news_id, mood_key)
+    with _locks_guard:
+        return _generation_locks.setdefault(key, threading.Lock())
 
 
 SYSTEM_PROMPT = """\
@@ -206,6 +221,22 @@ def get_or_create_rewrite(
             logger.debug("Cache hit for article %s / %s", news_id, mood.key)
             return cached, True
 
+    with _generation_lock(news_id, mood.key):
+        # Re-check inside the lock: whoever held it before us may have just
+        # generated exactly what this request wanted.
+        if not force:
+            cached = rewrite_repository.get_rewrite(news_id, mood.key)
+            if cached is not None:
+                logger.debug(
+                    "Cache hit after waiting for article %s / %s", news_id, mood.key
+                )
+                return cached, True
+        return _generate_and_store(news_id, mood), False
+
+
+def _generate_and_store(news_id: int, mood: Mood) -> Rewrite:
+    """Generate, fact-check, retry once if needed, and persist. Assumes the
+    caller holds this (article, mood)'s generation lock."""
     article = news_repository.get_article(news_id)
     if article is None:
         raise LookupError(f"Unknown article: {news_id}")
@@ -261,7 +292,7 @@ def get_or_create_rewrite(
             report.summary,
         )
 
-    stored = rewrite_repository.save_rewrite(
+    return rewrite_repository.save_rewrite(
         news_id=news_id,
         mood=mood.key,
         rewritten_text=draft.rewritten_text,
@@ -271,7 +302,6 @@ def get_or_create_rewrite(
         model=draft.model,
         attempts=report.attempts,
     )
-    return stored, False
 
 
 def recheck_rewrite(news_id: int, mood_key: str) -> Rewrite:
