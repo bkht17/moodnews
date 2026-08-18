@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.database import get_db_path, healthcheck
 from app.core.schema import init_db
 from app.repositories import news_repository
+from app.services.fact_extractor import backfill_facts
 from app.services.news_fetcher import ensure_articles
 
 logging.basicConfig(
@@ -28,12 +29,21 @@ logger = logging.getLogger("moodnews")
 settings = get_settings()
 
 
-def _startup_fetch() -> None:
-    """Blocking feed fetch, run in a worker thread (see lifespan)."""
+def _startup_ingest() -> None:
+    """Blocking fetch + fact extraction, run in a worker thread (see lifespan).
+
+    Facts are extracted here rather than lazily at request time so the first
+    rewrite of the day does not pay for it - though `ensure_facts` still
+    guarantees it before any rewrite, whatever happened at startup.
+    """
     try:
         ensure_articles()
     except Exception:  # never let ingestion take the API down
         logger.exception("Startup news fetch failed")
+    try:
+        backfill_facts()
+    except Exception:
+        logger.exception("Startup fact extraction failed")
 
 
 @asynccontextmanager
@@ -51,7 +61,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     if settings.fetch_on_startup:
         # Fetching hits the network; run it off the event loop and do not
         # block startup on it, so the API is serving immediately.
-        asyncio.create_task(asyncio.to_thread(_startup_fetch))
+        asyncio.create_task(asyncio.to_thread(_startup_ingest))
 
     yield
     logger.info("Shutting down %s", settings.app_name)
