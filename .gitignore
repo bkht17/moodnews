@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+*.log
+
+# Environment / secrets
+.env
+.env.local
+
+# SQLite database files
+*.db
+*.db-wal
+*.db-shm
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,46 @@
+services:
+  backend:
+    build: ./backend
+    container_name: moodnews-backend
+    env_file:
+      # Optional: the app boots without it, but mood rewriting needs LLM_API_KEY.
+      - path: .env
+        required: false
+    environment:
+      # The SQLite file lives on the shared named volume so it survives
+      # container restarts and rebuilds.
+      DB_PATH: /data/moodnews.db
+    volumes:
+      - moodnews-data:/data
+      # Bind mount for live reload during development.
+      - ./backend/app:/app/app
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: moodnews-frontend
+    environment:
+      # Inside the compose network the backend is reachable by service name.
+      VITE_API_PROXY_TARGET: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      # Keep the image's node_modules; do not let the bind mount shadow it.
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  moodnews-data:
