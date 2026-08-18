@@ -41,6 +41,7 @@ import logging
 from app.core.config import get_settings
 from app.models import Article, FactSet, Rewrite, RewriteDraft
 from app.repositories import news_repository, rewrite_repository
+from app.services import fact_checker
 from app.services.fact_extractor import ensure_facts
 from app.services.llm_client import LLMError, get_llm_client
 from app.services.moods import Mood, get_mood
@@ -216,16 +217,92 @@ def get_or_create_rewrite(
 
     logger.info("Rewriting article %s as '%s'", news_id, mood.key)
     draft = generate_rewrite(article, facts, mood)
+    report = fact_checker.check_rewrite(article, facts, draft.rewritten_text)
 
-    # Stored unverified for now: the fact-check pipeline is layered on top of
-    # this call in the next step, and will set a real status before saving.
+    if report.is_failed:
+        # One corrective retry, told exactly which facts went missing. Only
+        # one: a model that fails the same list twice is not going to get it
+        # on the third attempt, and the user is owed an answer, not a stall.
+        logger.warning(
+            "Fact check failed for article %s / %s (%s); retrying strictly",
+            news_id,
+            mood.key,
+            report.summary,
+        )
+        try:
+            retry_draft = generate_rewrite(
+                article,
+                facts,
+                mood,
+                strict_feedback=fact_checker.build_strict_feedback(report),
+            )
+        except LLMError as exc:
+            # Keep the first attempt and its failed status rather than losing
+            # the work; the flag travels with it either way.
+            logger.warning("Strict retry failed to generate: %s", exc)
+        else:
+            retry_report = fact_checker.check_rewrite(
+                article, facts, retry_draft.rewritten_text, attempts=2
+            )
+            # Keep whichever attempt verified better - a retry that came back
+            # worse is not an improvement just because it came second.
+            if fact_checker.rank(retry_report) > fact_checker.rank(report):
+                draft, report = retry_draft, retry_report
+            report.attempts = 2
+
+    if report.is_failed:
+        # Deliberately still stored and served, flagged rather than hidden:
+        # the UI shows the warning badge and the reader can compare against
+        # the original, which is always displayed beside it.
+        logger.warning(
+            "Serving article %s / %s with a FAILED fact check: %s",
+            news_id,
+            mood.key,
+            report.summary,
+        )
+
     stored = rewrite_repository.save_rewrite(
         news_id=news_id,
         mood=mood.key,
         rewritten_text=draft.rewritten_text,
         facts_preserved=draft.facts_preserved,
-        fact_check_status="unchecked",
+        fact_check_status=report.status,
+        fact_check_notes=report.model_dump_json(),
         model=draft.model,
-        attempts=draft.attempts,
+        attempts=report.attempts,
     )
     return stored, False
+
+
+def recheck_rewrite(news_id: int, mood_key: str) -> Rewrite:
+    """Re-run both fact-check layers on a cached rewrite, without regenerating.
+
+    Useful after the checker itself changes, and for inspecting a stored
+    rewrite without paying for another rewriting call.
+    """
+    mood = get_mood(mood_key)
+    if mood is None:
+        raise LookupError(f"Unknown mood: {mood_key}")
+
+    cached = rewrite_repository.get_rewrite(news_id, mood.key)
+    if cached is None:
+        raise LookupError(f"No cached rewrite for article {news_id} / {mood.key}")
+
+    article = news_repository.get_article(news_id)
+    if article is None:
+        raise LookupError(f"Unknown article: {news_id}")
+
+    facts = ensure_facts(article)
+    report = fact_checker.check_rewrite(
+        article, facts, cached.rewritten_text, attempts=cached.attempts
+    )
+    return rewrite_repository.save_rewrite(
+        news_id=news_id,
+        mood=mood.key,
+        rewritten_text=cached.rewritten_text,
+        facts_preserved=cached.facts_preserved,
+        fact_check_status=report.status,
+        fact_check_notes=report.model_dump_json(),
+        model=cached.model,
+        attempts=cached.attempts,
+    )

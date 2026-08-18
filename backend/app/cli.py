@@ -6,6 +6,7 @@
     python -m app.cli show-facts 3    # inspect one article's anchor facts
     python -m app.cli moods           # list available moods
     python -m app.cli rewrite 3 ironic  # rewrite one article (calls the LLM)
+    python -m app.cli recheck 3 ironic  # re-run the fact check on a cached rewrite
     python -m app.cli stats           # what is currently stored
 
 Inside Docker:  docker compose exec backend python -m app.cli fetch
@@ -22,7 +23,7 @@ from app.services.fact_extractor import backfill_facts, extract_facts
 from app.services.llm_client import LLMError
 from app.services.moods import MOODS, mood_keys
 from app.services.news_fetcher import fetch_all
-from app.services.rewriter import get_or_create_rewrite
+from app.services.rewriter import get_or_create_rewrite, recheck_rewrite
 
 
 def _cmd_init_db() -> int:
@@ -114,7 +115,49 @@ def _cmd_rewrite(news_id: int, mood: str, force: bool) -> int:
     print(rewrite.rewritten_text[:1500])
     if rewrite.facts_preserved:
         print(f"\nModel claims it preserved {len(rewrite.facts_preserved)} fact(s).")
+    _print_fact_check(rewrite)
     return 0
+
+
+def _print_fact_check(rewrite) -> None:
+    """Show both fact-check layers - including, and especially, a failure."""
+    report = rewrite.fact_check_report
+    print("\n--- FACT CHECK " + "-" * 52)
+    print(f"status: {rewrite.fact_check_status.upper()}   attempts: {rewrite.attempts}")
+    if report is None:
+        print("(no detail stored)")
+        return
+
+    print(
+        f"layer 1 (regex): {report.verbatim_verified}/{report.verbatim_total} "
+        f"numbers, dates and quotes found verbatim"
+    )
+    for missing in report.missing_verbatim:
+        print(f"    MISSING: {missing[:100]}")
+    print(f"layer 2 (LLM auditor): {report.llm.status}")
+    for item in report.llm.contradictions:
+        print(f"    CONTRADICTION: {item[:120]}")
+    for item in report.llm.missing_facts:
+        print(f"    missing: {item[:120]}")
+    print(f"summary: {report.summary}")
+
+
+def _cmd_recheck(news_id: int, mood: str) -> int:
+    """Re-verify a cached rewrite without paying for another rewriting call."""
+    init_db()
+    try:
+        rewrite = recheck_rewrite(news_id, mood)
+    except LookupError as exc:
+        print(exc)
+        return 1
+    _print_fact_check(rewrite)
+    return 0 if rewrite.fact_check_status != "failed" else 2
+
+
+def _mood_summary(news_id: int) -> str:
+    """Cached moods for one article, each with its fact-check verdict."""
+    rewrites = rewrite_repository.list_rewrites(news_id)
+    return ",".join(f"{r.mood}:{r.fact_check_status}" for r in rewrites) or "-"
 
 
 def _cmd_stats() -> int:
@@ -132,7 +175,7 @@ def _cmd_stats() -> int:
             f"[{article.id:>3}] {article.source_name:<14} "
             f"{article.published_at or article.fetched_at}  "
             f"{len(article.original_text):>5} chars  {fact_summary}  "
-            f"[{','.join(rewrite_repository.cached_moods(article.id)) or '-'}]  "
+            f"[{_mood_summary(article.id)}]  "
             f"{article.title[:40]}"
         )
     return 0
@@ -146,13 +189,16 @@ def main(argv: list[str] | None = None) -> int:
         "command",
         choices=[
             "init-db", "fetch", "extract-facts", "show-facts",
-            "moods", "rewrite", "stats",
+            "moods", "rewrite", "recheck", "stats",
         ],
     )
     parser.add_argument(
-        "news_id", nargs="?", type=int, help="article id, for show-facts/rewrite"
+        "news_id",
+        nargs="?",
+        type=int,
+        help="article id, for show-facts/rewrite/recheck",
     )
-    parser.add_argument("mood", nargs="?", help="mood key, for rewrite")
+    parser.add_argument("mood", nargs="?", help="mood key, for rewrite/recheck")
     parser.add_argument(
         "--force",
         action="store_true",
@@ -164,6 +210,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.news_id is None:
             parser.error("show-facts needs an article id, e.g. show-facts 3")
         return _cmd_show_facts(args.news_id)
+
+    if args.command == "recheck":
+        if args.news_id is None or not args.mood:
+            parser.error("recheck needs an article id and a mood, "
+                         "e.g. recheck 3 ironic")
+        return _cmd_recheck(args.news_id, args.mood)
 
     if args.command == "rewrite":
         if args.news_id is None or not args.mood:
