@@ -1,5 +1,6 @@
 """Domain models shared between the fetcher, the repository and the API."""
 
+import json
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
@@ -68,6 +69,47 @@ class FactSet(BaseModel):
 
     def by_type(self, fact_type: str) -> list[Fact]:
         return [f for f in self.facts if f.type == fact_type]
+
+
+# --- Rewrites ---------------------------------------------------------------
+
+
+class RewriteDraft(BaseModel):
+    """What the rewriting LLM returned, before it is verified or stored."""
+
+    rewritten_text: str
+    # The model's own account of which facts it kept. Useful for debugging and
+    # shown in the API, but never trusted as evidence: a model claiming it
+    # preserved everything is exactly the failure mode the fact-check exists
+    # to catch, so verification always re-derives this from the text itself.
+    facts_preserved: list[str] = Field(default_factory=list)
+    attempts: int = 1
+    model: str | None = None
+
+
+class Rewrite(BaseModel):
+    """A stored rewrite: one article in one mood, cached in the DB."""
+
+    id: int
+    news_id: int
+    mood: str
+    rewritten_text: str
+    facts_preserved_json: str | None = None
+    # passed | warning | failed | unchecked - see the fact-check pipeline.
+    fact_check_status: str = "unchecked"
+    fact_check_notes: str | None = None
+    model: str | None = None
+    attempts: int = 1
+    created_at: str
+
+    @property
+    def facts_preserved(self) -> list[str]:
+        if not self.facts_preserved_json:
+            return []
+        try:
+            return json.loads(self.facts_preserved_json)
+        except ValueError:
+            return []
 
 
 class FetchReport(BaseModel):
