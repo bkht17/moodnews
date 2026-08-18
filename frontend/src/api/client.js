@@ -21,3 +21,16 @@ export async function apiGet(path, params) {
 }
 
 export const getHealth = () => apiGet('/health')
+
+// The mood switcher's options. Served by the backend rather than hard-coded
+// here, so adding a mood stays a backend-only change.
+export const getMoods = () => apiGet('/moods')
+
+// The grid. Returns { items, total, limit, offset }.
+export const getNews = (params) => apiGet('/news', params)
+
+// One article. Without a mood the backend returns the original only; with one
+// it also returns the rewrite, generating it on demand when it is not cached -
+// which can take several seconds.
+export const getArticle = (id, mood) =>
+  apiGet(`/news/${id}`, mood ? { mood } : undefined)

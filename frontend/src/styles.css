@@ -1,10 +1,13 @@
 :root {
   --bg: #0f1116;
   --surface: #171a21;
+  --surface-raised: #1d212a;
   --border: #262b36;
+  --border-strong: #333a48;
   --text: #e8eaf0;
   --text-muted: #9aa3b2;
   --accent: #7c8cff;
+  --accent-soft: rgba(124, 140, 255, 0.14);
   --danger: #ff6b6b;
 
   color-scheme: dark;
@@ -23,15 +26,21 @@ body {
 }
 
 .app {
-  max-width: 1100px;
+  max-width: 1180px;
   margin: 0 auto;
   padding: 2.5rem 1.25rem 4rem;
 }
+
+/* --- Header ------------------------------------------------------------- */
 
 .app__header {
   border-bottom: 1px solid var(--border);
   padding-bottom: 1.5rem;
   margin-bottom: 2rem;
+}
+
+.app__brand {
+  margin-bottom: 1.5rem;
 }
 
 .app__title {
@@ -49,20 +58,294 @@ body {
   color: var(--text-muted);
 }
 
-.panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1.25rem 1.5rem;
+.app__footer {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.85rem;
 }
 
-.panel__title {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
+.app__footer p {
+  margin: 0;
+}
+
+/* --- Mood switcher ------------------------------------------------------ */
+
+.mood-switcher {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem 1.15rem;
+}
+
+.mood-switcher__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.mood-switcher__label {
+  font-size: 0.75rem;
   text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.mood-switcher__hint {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.mood-switcher__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mood-pill {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0.4rem 1rem;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.mood-pill:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.mood-pill:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.mood-pill--active {
+  color: var(--text);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.mood-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- Section head ------------------------------------------------------- */
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.section-head__title {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+
+.section-head__count {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* --- Grid --------------------------------------------------------------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.1rem 1.2rem 1rem;
+}
+
+.card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.card__source {
+  font-size: 0.72rem;
+  font-weight: 600;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.card__date {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.card__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.02rem;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+.card__preview {
+  margin: 0 0 1rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  /* Keep every card the same height regardless of preview length. */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card__footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.card__source-link {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+
+.card__source-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* --- Loading skeletons -------------------------------------------------- */
+
+.card--skeleton {
+  gap: 0.55rem;
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-raised) 25%,
+    var(--border) 37%,
+    var(--surface-raised) 63%
+  );
+  background-size: 400% 100%;
+  border-radius: 6px;
+  height: 0.7rem;
+  animation: skeleton-sweep 1.4s ease infinite;
+}
+
+.skeleton--meta {
+  width: 45%;
+  height: 0.6rem;
+  margin-bottom: 0.3rem;
+}
+
+.skeleton--title {
+  height: 1rem;
+}
+
+.skeleton--text {
+  height: 0.62rem;
+}
+
+.skeleton--short {
+  width: 60%;
+}
+
+@keyframes skeleton-sweep {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* --- Notices and buttons ------------------------------------------------ */
+
+.notice {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.5rem;
   color: var(--text-muted);
 }
+
+.notice p {
+  margin: 0 0 0.5rem;
+}
+
+.notice--error {
+  border-color: rgba(255, 107, 107, 0.4);
+  color: var(--danger);
+}
+
+.notice__detail {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.notice code {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.button {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  color: var(--text);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 0.45rem 1rem;
+}
+
+.button:hover {
+  border-color: var(--accent);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- Status text -------------------------------------------------------- */
 
 .status {
   margin: 0;
@@ -71,14 +354,4 @@ body {
 
 .status--error {
   color: var(--danger);
-}
-
-.status-list {
-  margin: 0;
-  padding-left: 1.1rem;
-  color: var(--text-muted);
-}
-
-.status-list strong {
-  color: var(--text);
 }
