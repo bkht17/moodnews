@@ -5,6 +5,7 @@ exposes health/meta endpoints so the container, the compose healthcheck and the
 frontend all have something real to talk to.
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,6 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import get_db_path, healthcheck
+from app.core.schema import init_db
+from app.repositories import news_repository
+from app.services.news_fetcher import ensure_articles
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,15 +28,31 @@ logger = logging.getLogger("moodnews")
 settings = get_settings()
 
 
+def _startup_fetch() -> None:
+    """Blocking feed fetch, run in a worker thread (see lifespan)."""
+    try:
+        ensure_articles()
+    except Exception:  # never let ingestion take the API down
+        logger.exception("Startup news fetch failed")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logger.info("Starting %s", settings.app_name)
     logger.info("SQLite database: %s", get_db_path())
+    init_db()
+
     if not settings.llm_configured:
         logger.warning(
             "LLM_API_KEY is not set - mood rewriting will be unavailable "
             "until it is configured (see .env.example)."
         )
+
+    if settings.fetch_on_startup:
+        # Fetching hits the network; run it off the event loop and do not
+        # block startup on it, so the API is serving immediately.
+        asyncio.create_task(asyncio.to_thread(_startup_fetch))
+
     yield
     logger.info("Shutting down %s", settings.app_name)
 
@@ -63,6 +83,7 @@ def health() -> dict:
     return {
         "status": "ok" if db_ok else "degraded",
         "database": "ok" if db_ok else "unreachable",
+        "article_count": news_repository.count_articles() if db_ok else 0,
         "llm_configured": settings.llm_configured,
     }
 
