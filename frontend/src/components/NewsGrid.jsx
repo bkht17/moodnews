@@ -1,7 +1,7 @@
 import NewsCard from './NewsCard.jsx'
 
 // The grid, plus the three states it can be in besides "has articles".
-export default function NewsGrid({ articles, loading, error, onRetry }) {
+export default function NewsGrid({ articles, loading, error, onRetry, onOpen }) {
   if (loading) {
     // Skeleton cards rather than a spinner: the layout does not jump when the
     // real articles arrive.
@@ -54,7 +54,7 @@ export default function NewsGrid({ articles, loading, error, onRetry }) {
   return (
     <div className="grid">
       {articles.map((article) => (
-        <NewsCard key={article.id} article={article} />
+        <NewsCard key={article.id} article={article} onOpen={onOpen} />
       ))}
     </div>
   )

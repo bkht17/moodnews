@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import ArticleView from './components/ArticleView.jsx'
 import MoodSwitcher from './components/MoodSwitcher.jsx'
 import NewsGrid from './components/NewsGrid.jsx'
 import { getMoods, getNews } from './api/client.js'
@@ -25,6 +26,10 @@ export default function App() {
   const [articles, setArticles] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  // Which article the comparison view is showing, if any. A single piece of
+  // state is enough: the app is a grid or one article, never both.
+  const [openId, setOpenId] = useState(null)
 
   const loadMoods = useCallback(() => {
     setMoodsError(null)
@@ -59,6 +64,13 @@ export default function App() {
   useEffect(() => {
     reload()
   }, [reload])
+
+  const openArticle = useCallback((id) => {
+    setOpenId(id)
+    window.scrollTo({ top: 0 })
+  }, [])
+
+  const closeArticle = useCallback(() => setOpenId(null), [])
 
   const handleMoodChange = useCallback((key) => {
     setMood(key)
@@ -97,19 +109,35 @@ export default function App() {
       </header>
 
       <main className="app__main">
-        <div className="section-head">
-          <h2 className="section-head__title">Latest news</h2>
-          <span className="section-head__count">
-            {articles.length > 0 && `${articles.length} articles`}
-          </span>
-        </div>
+        {openId === null ? (
+          <>
+            <div className="section-head">
+              <h2 className="section-head__title">Latest news</h2>
+              <span className="section-head__count">
+                {articles.length > 0 && `${articles.length} articles`}
+              </span>
+            </div>
 
-        <NewsGrid
-          articles={articles}
-          loading={loading}
-          error={error}
-          onRetry={reload}
-        />
+            <NewsGrid
+              articles={articles}
+              loading={loading}
+              error={error}
+              onRetry={reload}
+              onOpen={openArticle}
+            />
+          </>
+        ) : (
+          // Keyed on the mood as well as the article: switching mood while
+          // reading remounts the view, which is exactly the behaviour wanted -
+          // the same story, retold.
+          <ArticleView
+            key={`${openId}-${mood}`}
+            id={openId}
+            mood={mood}
+            moodLabel={moods.find((item) => item.key === mood)?.label}
+            onClose={closeArticle}
+          />
+        )}
       </main>
 
       <footer className="app__footer">
