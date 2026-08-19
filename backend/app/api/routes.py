@@ -29,7 +29,7 @@ from app.api.schemas import (
 )
 from app.models import FactSet
 from app.repositories import news_repository, rewrite_repository
-from app.services.llm_client import LLMError, LLMNotConfigured
+from app.services.llm_client import LLMError, LLMNotConfigured, LLMRefused
 from app.services.moods import MOODS, get_mood, mood_keys
 from app.services.rewriter import get_or_create_rewrite
 
@@ -123,6 +123,14 @@ def get_news(
     except LLMNotConfigured as exc:
         detail_kwargs["rewrite_error"] = RewriteError(
             code="llm_not_configured", message=str(exc)
+        )
+    except LLMRefused as exc:
+        # A policy refusal is about this article, not about the service, so it
+        # gets its own code: the UI can say "this one could not be retold"
+        # rather than implying the rewriter is broken.
+        logger.info("Rewrite refused for article %s / %s: %s", news_id, mood, exc)
+        detail_kwargs["rewrite_error"] = RewriteError(
+            code="llm_refused", message=str(exc)
         )
     except LLMError as exc:
         logger.warning("Rewrite failed for article %s / %s: %s", news_id, mood, exc)

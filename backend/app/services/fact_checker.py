@@ -42,7 +42,14 @@ import logging
 import re
 
 from app.core.config import get_settings
-from app.models import Article, Fact, FactCheckReport, FactSet, LLMVerdict
+from app.models import (
+    Article,
+    Fact,
+    FactCheckReport,
+    FactSet,
+    LLMVerdict,
+    VerdictPayload,
+)
 from app.services.fact_extractor import digit_core, normalise
 from app.services.llm_client import LLMError, get_llm_client
 
@@ -221,10 +228,16 @@ def verify_with_llm(
         payload = get_llm_client().complete_json(
             system_prompt=AUDITOR_SYSTEM_PROMPT,
             user_prompt=user_prompt,
-            # Verification must be deterministic and reproducible: same inputs,
-            # same verdict. Configured to 0 by default (see .env.example).
+            # Verification should be as reproducible as the backend allows:
+            # same inputs, same verdict. Configured to 0 by default (see
+            # .env.example). Current Claude models removed sampling controls,
+            # so the Anthropic backend ignores this and runs at high effort
+            # instead - which is why the binding check is the regex layer, not
+            # this one.
             temperature=settings.llm_verify_temperature,
             max_tokens=1500,
+            schema=VerdictPayload,
+            effort="high",
         )
     except LLMError as exc:
         logger.warning("Fact-check auditor call failed: %s", exc)

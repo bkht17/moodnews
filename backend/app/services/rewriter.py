@@ -40,7 +40,7 @@ import logging
 import threading
 
 from app.core.config import get_settings
-from app.models import Article, FactSet, Rewrite, RewriteDraft
+from app.models import Article, FactSet, Rewrite, RewriteDraft, RewritePayload
 from app.repositories import news_repository, rewrite_repository
 from app.services import fact_checker
 from app.services.fact_extractor import ensure_facts
@@ -177,6 +177,10 @@ def generate_rewrite(
         system_prompt=SYSTEM_PROMPT,
         user_prompt=build_user_prompt(article, facts, mood, strict_feedback),
         temperature=settings_temperature,
+        # Backends that can enforce a reply schema are given one; the others
+        # fall back to the prompt's JSON instruction and lenient parsing.
+        schema=RewritePayload,
+        effort="medium",
     )
 
     text = (payload.get("rewritten_text") or "").strip()

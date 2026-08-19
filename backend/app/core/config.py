@@ -37,7 +37,12 @@ class Settings(BaseSettings):
     # Per-feed cap so one chatty feed cannot dominate the grid.
     max_articles_per_feed: int = 5
 
-    # --- LLM (OpenAI-compatible chat completions) ---
+    # --- LLM ---
+    # Which client to talk to the model with:
+    #   auto      pick from llm_model / llm_base_url (default)
+    #   anthropic native Anthropic SDK - schema-enforced JSON, refusal handling
+    #   openai    any OpenAI-compatible /chat/completions endpoint
+    llm_provider: str = "auto"
     llm_api_key: str = ""
     llm_base_url: str = "https://api.z.ai/api/paas/v4"
     llm_model: str = "glm-4.6"
@@ -54,6 +59,21 @@ class Settings(BaseSettings):
     @property
     def llm_configured(self) -> bool:
         return bool(self.llm_api_key)
+
+    @property
+    def resolved_llm_provider(self) -> str:
+        """The backend to use, resolving "auto" from the model and base URL."""
+        provider = (self.llm_provider or "auto").strip().lower()
+        if provider in ("anthropic", "claude"):
+            return "anthropic"
+        if provider == "openai":
+            return "openai"
+        # auto: a Claude model name, or Anthropic's own host, means Anthropic.
+        if self.llm_model.strip().lower().startswith("claude"):
+            return "anthropic"
+        if "api.anthropic.com" in self.llm_base_url:
+            return "anthropic"
+        return "openai"
 
 
 @lru_cache

@@ -105,23 +105,67 @@ full annotated list. The ones that matter:
 | Variable | Default | What it does |
 |---|---|---|
 | `LLM_API_KEY` | *(empty)* | **Required for rewriting.** Without it the app still runs and serves original articles; the rewrite panel explains that rewriting is unavailable. |
-| `LLM_BASE_URL` | `https://api.z.ai/api/paas/v4` | Any OpenAI-compatible `/chat/completions` endpoint. |
-| `LLM_MODEL` | `glm-4.6` | Model name as the endpoint expects it. |
-| `LLM_REWRITE_TEMPERATURE` | `0.7` | Creative latitude for rewriting. |
-| `LLM_VERIFY_TEMPERATURE` | `0` | Fact-checking must be deterministic. Leave at 0. |
+| `LLM_PROVIDER` | `auto` | `auto`, `anthropic` or `openai`. Auto picks the Anthropic SDK for a `claude-*` model, the OpenAI-compatible client otherwise. |
+| `LLM_MODEL` | `claude-opus-5` | Model name as the provider expects it. |
+| `LLM_BASE_URL` | `https://api.z.ai/api/paas/v4` | Any OpenAI-compatible `/chat/completions` endpoint. Unused when the Anthropic SDK is selected. |
+| `LLM_REWRITE_TEMPERATURE` | `0.7` | Creative latitude for rewriting. Not sent on Claude — see below. |
+| `LLM_VERIFY_TEMPERATURE` | `0` | Verification should be reproducible. Not sent on Claude — see below. |
 | `DB_PATH` | `moodnews.db` | SQLite file. Compose overrides this to `/data/moodnews.db`. |
 | `FETCH_ON_STARTUP` | `true` | Fetch feeds on boot when the DB holds fewer than `MIN_ARTICLES`. |
 | `MIN_ARTICLES` / `MAX_ARTICLES_PER_FEED` | `10` / `5` | Ingestion targets. |
 | `CORS_ORIGINS` | `http://localhost:5173,…` | Comma-separated allowed origins. |
 
-Because the client only assumes the OpenAI wire format, switching provider is a
-`.env` change, not a code change:
+Switching provider is a `.env` change, not a code change:
 
 ```bash
-# OpenAI instead of GLM
-LLM_BASE_URL=https://api.openai.com/v1
+# Claude (native Anthropic SDK — selected automatically by the model name)
+LLM_MODEL=claude-opus-5
+
+# GLM via z.ai
+LLM_MODEL=glm-4.6
+LLM_BASE_URL=https://api.z.ai/api/paas/v4
+
+# OpenAI
 LLM_MODEL=gpt-4o-mini
+LLM_BASE_URL=https://api.openai.com/v1
+
+# Gemini (OpenAI-compatible endpoint)
+LLM_MODEL=gemini-2.5-flash
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+
+# Ollama, running locally — no key needed, but the variable must be non-empty
+LLM_MODEL=llama3.1
+LLM_BASE_URL=http://host.docker.internal:11434/v1
+LLM_API_KEY=ollama
 ```
+
+### The two LLM backends
+
+`llm_client.py` exposes one method, `complete_json`, behind two
+implementations:
+
+| | `OpenAICompatibleClient` | `AnthropicClient` |
+|---|---|---|
+| Talks to | anything speaking `/chat/completions` | Claude, via the official `anthropic` SDK |
+| JSON | `response_format: json_object` where supported, with lenient parsing as a fallback | **schema-enforced server-side** (`messages.parse`), so a malformed payload cannot reach the fact-checker |
+| Refusals | surface as generic errors | a distinct `LLMRefused`, retried on another Claude model in-call via server-side fallbacks |
+| Temperature | sent as configured | **not sent** — current Claude models removed the sampling parameters; reasoning effort is used instead (`medium` to rewrite, `high` to audit) |
+
+Claude is given its own backend rather than routed through Anthropic's OpenAI
+compatibility shim because that shim *ignores* `response_format`, which would
+leave the pipeline parsing prose. The refusal path matters here too: this app
+rewrites real reporting on violence and disasters, so a policy decline is a
+normal outcome, and it is shown as "this article could not be retold in this
+mood" beside an unaffected original — not as a broken service.
+
+**On the auditor and temperature.** The fact-checking pass is specified to run
+deterministically, and on OpenAI-compatible providers it does, at
+`temperature=0`. Current Claude models removed sampling controls entirely, so
+on that backend the auditor runs at high reasoning effort with a fixed prompt
+instead. This does not weaken the guarantee: the binding check on numbers,
+dates and quotes is the **programmatic layer**, which is a string match and is
+deterministic on every provider. The auditor is the second opinion layered on
+top of it.
 
 ---
 
@@ -389,7 +433,11 @@ would make the badge cry wolf. They are the auditor's remit instead.
 
 A **second, separate LLM call** with:
 
-- **`temperature = 0`** — verification must be deterministic and reproducible.
+- **`temperature = 0`** — verification must be as reproducible as the provider
+  allows. (On Claude, sampling parameters no longer exist and the auditor runs
+  at high reasoning effort instead; see
+  [The two LLM backends](#the-two-llm-backends). The binding check below is
+  deterministic on every provider regardless.)
 - **A distinct system prompt** casting the model as an adversarial
   fact-checking auditor, not a writer.
 - **Different inputs**: the original article, the anchor facts as JSON, and the
@@ -564,7 +612,7 @@ backend/
       news_fetcher.py        fetch, clean, scrape, store
       fact_extractor.py      anchor-fact extraction  ← ground truth
       moods.py               the mood registry
-      llm_client.py          OpenAI-compatible client, JSON handling
+      llm_client.py          two LLM backends (Anthropic SDK / OpenAI-compatible)
       rewriter.py            prompt assembly, generation, retry, caching
       fact_checker.py        two-layer verification  ← the guarantee
     api/
@@ -647,15 +695,18 @@ documentation — worked through in reviewed sections, one commit at a time. No
 other AI assistant, code generator or autocomplete tool was involved.
 
 **AI used inside the app.** Separately, and by design, the product's core
-feature calls an LLM at runtime: **GLM (`glm-4.6`) via
-[z.ai](https://z.ai)**, reached through its OpenAI-compatible
-chat-completions API. It is called twice per uncached rewrite:
+feature calls an LLM at runtime. The default is **Claude (`claude-opus-5`)
+through the official Anthropic SDK**; **GLM (`glm-4.6`) via
+[z.ai](https://z.ai)** and any other OpenAI-compatible endpoint are supported
+by changing `LLM_MODEL` (see
+[The two LLM backends](#the-two-llm-backends)). It is called twice per uncached
+rewrite:
 
 1. once to rewrite the article in the chosen mood (temperature 0.7), and
 2. once, separately, to audit that rewrite for factual faithfulness
-   (temperature 0, different system prompt).
+   (different system prompt; temperature 0 where the provider supports it).
 
 The distinction matters: the first is a tool that helped write the code, the
 second is a dependency the running application has. The provider is not
-hard-coded — `LLM_BASE_URL` and `LLM_MODEL` point the same client at OpenAI or
-any other compatible endpoint.
+hard-coded — `LLM_MODEL`, `LLM_BASE_URL` and `LLM_PROVIDER` point the app at
+Claude, GLM, OpenAI, Gemini, Groq or a local Ollama without touching code.

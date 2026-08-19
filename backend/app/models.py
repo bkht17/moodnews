@@ -159,6 +159,29 @@ class FactCheckReport(BaseModel):
         return self.status == "failed"
 
 
+# --- LLM wire schemas -------------------------------------------------------
+# These describe exactly what each LLM call must return. On backends that
+# support schema-enforced structured output (the Anthropic SDK) they are handed
+# to the API so conformance is guaranteed rather than hoped for; on plain
+# OpenAI-compatible endpoints they document the same contract the prompt asks
+# for. No defaults: every field is required, which is the point of a schema.
+
+
+class RewritePayload(BaseModel):
+    """What the rewriting call must return."""
+
+    rewritten_text: str
+    facts_preserved: list[str]
+
+
+class VerdictPayload(BaseModel):
+    """What the fact-checking auditor call must return."""
+
+    all_facts_present: bool
+    missing_facts: list[str]
+    contradictions: list[str]
+
+
 class FetchReport(BaseModel):
     """Outcome of a fetch run, returned by the CLI and logged on startup."""
 

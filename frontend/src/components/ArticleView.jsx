@@ -163,7 +163,9 @@ export default function ArticleView({ id, mood, moodLabel, onClose }) {
                   <p>
                     {rewriteError.code === 'llm_not_configured'
                       ? 'Mood rewriting is not available: no LLM API key is configured.'
-                      : 'The rewrite could not be produced.'}
+                      : rewriteError.code === 'llm_refused'
+                        ? 'This article could not be retold in this mood.'
+                        : 'The rewrite could not be produced.'}
                   </p>
                   <p className="notice__detail">{rewriteError.message}</p>
                   <p className="notice__detail">
