@@ -689,9 +689,7 @@ in async syntax.
 ## AI tools used
 
 **AI used to build this project.** [Claude Code](https://claude.com/claude-code)
-(Anthropic) was the **only** AI tool used to build MoodNews. It was used for
-the whole implementation — backend, frontend, Docker setup and this
-documentation — worked through in reviewed sections, one commit at a time. No
+(Anthropic) was the **only** AI tool used to build MoodNews. No
 other AI assistant, code generator or autocomplete tool was involved.
 
 **AI used inside the app.** Separately, and by design, the product's core
